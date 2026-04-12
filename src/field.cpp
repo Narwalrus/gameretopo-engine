@@ -295,6 +295,18 @@ inline Vector3f position_floor_4(const Vector3f &o, const Vector3f &q,
         t * std::floor(t.dot(d) * inv_scale) * scale;
 }
 
+/* Anisotropic version: separate scale in q (tangent) and t (bitangent) directions */
+inline Vector3f position_floor_4_aniso(const Vector3f &o, const Vector3f &q,
+                                       const Vector3f &n, const Vector3f &p,
+                                       Float scale_q, Float inv_scale_q,
+                                       Float scale_t, Float inv_scale_t) {
+    Vector3f t = n.cross(q);
+    Vector3f d = p - o;
+    return o +
+        q * std::floor(q.dot(d) * inv_scale_q) * scale_q +
+        t * std::floor(t.dot(d) * inv_scale_t) * scale_t;
+}
+
 inline Vector2i position_floor_index_4(const Vector3f &o, const Vector3f &q,
                                        const Vector3f &n, const Vector3f &p,
                                        Float /* unused */, Float inv_scale) {
@@ -522,6 +534,44 @@ inline std::pair<Vector3f, Vector3f> compat_position_extrinsic_4(
     return std::make_pair(
         o0p + (q0 * (best_i & 1) + t0 * ((best_i & 2) >> 1)) * scale,
         o1p + (q1 * (best_j & 1) + t1 * ((best_j & 2) >> 1)) * scale);
+}
+
+/* Anisotropic variant: uses separate scale in q (tangent) and t (bitangent) directions.
+   Stretch > 1 elongates quads along the q direction. Stretch < 1 elongates along t.
+   Area is approximately preserved: scale_q * scale_t == scale * scale. */
+inline std::pair<Vector3f, Vector3f> compat_position_extrinsic_4_aniso(
+        const Vector3f &p0, const Vector3f &n0, const Vector3f &q0, const Vector3f &o0,
+        const Vector3f &p1, const Vector3f &n1, const Vector3f &q1, const Vector3f &o1,
+        Float scale_q, Float scale_t) {
+
+    const Float inv_scale_q = 1.0f / scale_q;
+    const Float inv_scale_t = 1.0f / scale_t;
+
+    Vector3f t0 = n0.cross(q0), t1 = n1.cross(q1);
+    Vector3f middle = middle_point(p0, n0, p1, n1);
+    Vector3f o0p = position_floor_4_aniso(o0, q0, n0, middle, scale_q, inv_scale_q, scale_t, inv_scale_t);
+    Vector3f o1p = position_floor_4_aniso(o1, q1, n1, middle, scale_q, inv_scale_q, scale_t, inv_scale_t);
+
+    Float best_cost = std::numeric_limits<Float>::infinity();
+    int best_i = -1, best_j = -1;
+
+    for (int i=0; i<4; ++i) {
+        Vector3f o0t = o0p + q0 * (i&1) * scale_q + t0 * ((i&2) >> 1) * scale_t;
+        for (int j=0; j<4; ++j) {
+            Vector3f o1t = o1p + q1 * (j&1) * scale_q + t1 * ((j&2) >> 1) * scale_t;
+            Float cost = (o0t-o1t).squaredNorm();
+
+            if (cost < best_cost) {
+                best_i = i;
+                best_j = j;
+                best_cost = cost;
+            }
+        }
+    }
+
+    return std::make_pair(
+        o0p + q0 * (best_i & 1) * scale_q + t0 * ((best_i & 2) >> 1) * scale_t,
+        o1p + q1 * (best_j & 1) * scale_q + t1 * ((best_j & 2) >> 1) * scale_t);
 }
 
 std::pair<Vector2i, Vector2i> compat_position_extrinsic_index_4(
@@ -913,6 +963,16 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
     }
     const bool has_vscale = (vscale_ptr != nullptr);
 
+    /* Per-vertex stretch (anisotropic scaling).
+       stretch > 1 elongates quads along q, < 1 along t. Defaults to 1.0. */
+    const VectorXf *stretch_ptr = nullptr;
+    if (mRes.hasVertexStretch()
+            && level < (int)mRes.mVertexStretch.size()
+            && (int)mRes.mVertexStretch[level].size() == N.cols()) {
+        stretch_ptr = &mRes.mVertexStretch[level];
+    }
+    const bool has_stretch = (stretch_ptr != nullptr);
+
     const std::vector<uint32_t> *phase = nullptr;
     const MatrixXf &CQ = mRes.CQ(level);
     const MatrixXf &CO = mRes.CO(level);
@@ -960,8 +1020,23 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     local_inv_scale = 1.0f / local_scale;
                 }
 
-                std::pair<Vector3f, Vector3f> value = compat_functor(
-                    v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, local_scale, local_inv_scale);
+                std::pair<Vector3f, Vector3f> value;
+                if (has_stretch) {
+                    /* Anisotropic path: compute q/t scales from per-vertex stretch.
+                       stretch > 1 -> elongate along q; stretch < 1 -> elongate along t.
+                       Area is approximately preserved: sqrt(stretch) * 1/sqrt(stretch) = 1. */
+                    Float s = 0.5f * ((*stretch_ptr)[i] + (*stretch_ptr)[j]);
+                    if (s < 0.25f) s = 0.25f;
+                    if (s > 4.0f) s = 4.0f;
+                    Float sqrt_s = std::sqrt(s);
+                    Float scale_q = local_scale * sqrt_s;
+                    Float scale_t = local_scale / sqrt_s;
+                    value = compat_position_extrinsic_4_aniso(
+                        v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, scale_q, scale_t);
+                } else {
+                    value = compat_functor(
+                        v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, local_scale, local_inv_scale);
+                }
 
                 sum = value.first*weight_sum + value.second*weight;
                 weight_sum += weight;
