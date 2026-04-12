@@ -1012,10 +1012,12 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 Float local_inv_scale = inv_scale;
                 if (has_vscale) {
                     Float w = 0.5f * ((*vscale_ptr)[i] + (*vscale_ptr)[j]);
-                    /* Map weight 0..1 to scale multiplier: w=0 -> 2.5x (sparse), w=1 -> 0.3x (dense) */
-                    Float multiplier = 2.5f - 2.2f * w;
-                    if (multiplier < 0.2f) multiplier = 0.2f;
-                    if (multiplier > 3.0f) multiplier = 3.0f;
+                    /* Symmetric around neutral: w=0.5 -> 1.0x (neutral).
+                       Exponential: multiplier = 1.5^(1 - 2w).
+                       w=0 -> 1.5x (sparse), w=0.5 -> 1.0x, w=1 -> 0.667x (dense) */
+                    Float multiplier = std::pow(1.5f, 1.0f - 2.0f * w);
+                    if (multiplier < 0.5f) multiplier = 0.5f;
+                    if (multiplier > 2.0f) multiplier = 2.0f;
                     local_scale = scale * multiplier;
                     local_inv_scale = 1.0f / local_scale;
                 }
@@ -1060,9 +1062,9 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 Float round_scale = scale;
                 Float round_inv_scale = inv_scale;
                 if (has_vscale) {
-                    Float multiplier = 2.5f - 2.2f * (*vscale_ptr)[i];
-                    if (multiplier < 0.2f) multiplier = 0.2f;
-                    if (multiplier > 3.0f) multiplier = 3.0f;
+                    Float multiplier = std::pow(1.5f, 1.0f - 2.0f * (*vscale_ptr)[i]);
+                    if (multiplier < 0.5f) multiplier = 0.5f;
+                    if (multiplier > 2.0f) multiplier = 2.0f;
                     round_scale = scale * multiplier;
                     round_inv_scale = 1.0f / round_scale;
                 }
@@ -1087,9 +1089,9 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
             /* Per-vertex scale for frozen mode */
             Float frozen_scale = scale;
             if (has_vscale) {
-                Float multiplier = 2.5f - 2.2f * (*vscale_ptr)[i];
-                if (multiplier < 0.2f) multiplier = 0.2f;
-                if (multiplier > 3.0f) multiplier = 3.0f;
+                Float multiplier = std::pow(1.5f, 1.0f - 2.0f * (*vscale_ptr)[i]);
+                if (multiplier < 0.5f) multiplier = 0.5f;
+                if (multiplier > 2.0f) multiplier = 2.0f;
                 frozen_scale = scale * multiplier;
             }
 
