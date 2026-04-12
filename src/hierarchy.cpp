@@ -455,6 +455,38 @@ void MultiResolutionHierarchy::build(bool deterministic, const ProgressCallback 
         mCOw.push_back(VectorXf());
         mCQ.push_back(MatrixXf());
         mCQw.push_back(VectorXf());
+
+        /* Propagate per-vertex scale weights through hierarchy.
+           Access from stored vectors since V_p/toLower have been moved. */
+        auto propagate = [&](std::vector<VectorXf> &levels) {
+            const VectorXf &prevLevel = levels[i];
+            const VectorXu &storedToLower = mToLower.back();
+            uint32_t newSize = mV.back().cols();
+            VectorXf new_level(newSize);
+            new_level.setOnes();
+            VectorXf count_p(newSize);
+            count_p.setZero();
+            for (uint32_t j = 0; j < (uint32_t)storedToLower.size(); ++j) {
+                uint32_t parent = storedToLower[j];
+                if (parent != INVALID && parent < newSize && j < (uint32_t)prevLevel.size()) {
+                    if (count_p[parent] == 0) {
+                        new_level[parent] = prevLevel[j];
+                    } else {
+                        new_level[parent] = (new_level[parent] * count_p[parent] + prevLevel[j]) / (count_p[parent] + 1.0f);
+                    }
+                    count_p[parent] += 1.0f;
+                }
+            }
+            levels.push_back(std::move(new_level));
+        };
+
+        if (hasVertexScale()) {
+            propagate(mVertexScale);
+        }
+        if (hasVertexStretch()) {
+            propagate(mVertexStretch);
+        }
+
         if (mV[mV.size()-1].cols() == 1)
             break;
     }

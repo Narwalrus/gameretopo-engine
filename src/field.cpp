@@ -901,6 +901,18 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
     const AdjacencyMatrix &adj = mRes.adj(level);
     const MatrixXf &N = mRes.N(level), &Q = mRes.Q(level), &V = mRes.V(level);
     const Float scale = mRes.scale(), inv_scale = 1.0f / scale;
+
+    /* Per-vertex scale weight map. Defensive: only enable if
+       the hierarchy has weights for this specific level AND the size
+       matches the vertex count. Otherwise, use global scale. */
+    const VectorXf *vscale_ptr = nullptr;
+    if (mRes.hasVertexScale()
+            && level < (int)mRes.mVertexScale.size()
+            && (int)mRes.mVertexScale[level].size() == N.cols()) {
+        vscale_ptr = &mRes.mVertexScale[level];
+    }
+    const bool has_vscale = (vscale_ptr != nullptr);
+
     const std::vector<uint32_t> *phase = nullptr;
     const MatrixXf &CQ = mRes.CQ(level);
     const MatrixXf &CO = mRes.CO(level);
@@ -933,8 +945,23 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     q_j.normalize();
                 #endif
 
+                /* Per-vertex scale: weight map modulates density.
+                   Higher weight value = smaller local scale = denser quads.
+                   Combine vertex weights by averaging. Invert: w=1 means dense. */
+                Float local_scale = scale;
+                Float local_inv_scale = inv_scale;
+                if (has_vscale) {
+                    Float w = 0.5f * ((*vscale_ptr)[i] + (*vscale_ptr)[j]);
+                    /* Map weight 0..1 to scale multiplier: w=0 -> 2.5x (sparse), w=1 -> 0.3x (dense) */
+                    Float multiplier = 2.5f - 2.2f * w;
+                    if (multiplier < 0.2f) multiplier = 0.2f;
+                    if (multiplier > 3.0f) multiplier = 3.0f;
+                    local_scale = scale * multiplier;
+                    local_inv_scale = 1.0f / local_scale;
+                }
+
                 std::pair<Vector3f, Vector3f> value = compat_functor(
-                    v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, scale, inv_scale);
+                    v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, local_scale, local_inv_scale);
 
                 sum = value.first*weight_sum + value.second*weight;
                 weight_sum += weight;
@@ -954,8 +981,18 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 }
             }
 
-            if (weight_sum > 0)
-                O.col(i) = round_functor(sum, q_i, n_i, v_i, scale, inv_scale);
+            if (weight_sum > 0) {
+                Float round_scale = scale;
+                Float round_inv_scale = inv_scale;
+                if (has_vscale) {
+                    Float multiplier = 2.5f - 2.2f * (*vscale_ptr)[i];
+                    if (multiplier < 0.2f) multiplier = 0.2f;
+                    if (multiplier > 3.0f) multiplier = 3.0f;
+                    round_scale = scale * multiplier;
+                    round_inv_scale = 1.0f / round_scale;
+                }
+                O.col(i) = round_functor(sum, q_i, n_i, v_i, round_scale, round_inv_scale);
+            }
         }
     };
 
@@ -972,6 +1009,15 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
             #endif
             const Vector3f t_i = n_i.cross(q_i);
 
+            /* Per-vertex scale for frozen mode */
+            Float frozen_scale = scale;
+            if (has_vscale) {
+                Float multiplier = 2.5f - 2.2f * (*vscale_ptr)[i];
+                if (multiplier < 0.2f) multiplier = 0.2f;
+                if (multiplier > 3.0f) multiplier = 3.0f;
+                frozen_scale = scale * multiplier;
+            }
+
             for (Link *link = adj[i]; link != adj[i+1]; ++link) {
                 const uint32_t j = link->id;
                 const Float weight = link->weight;
@@ -986,7 +1032,7 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 #endif
                 const Vector3f t_j = n_j.cross(q_j);
 
-                sum += o_j + scale * (
+                sum += o_j + frozen_scale * (
                       q_j * link->ivar[1].translate_u
                     + t_j * link->ivar[1].translate_v
                     - q_i * link->ivar[0].translate_u

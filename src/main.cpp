@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
     uint32_t knn_points = 10, smooth_iter = 2;
     Float crease_angle = -1, scale = -1;
     std::string batchOutput;
+    std::string weightMapFile;
     #if defined(__APPLE__)
         bool launched_from_finder = false;
     #endif
@@ -112,6 +113,12 @@ int main(int argc, char **argv) {
                 dominant = true;
             } else if (strcmp("--compat", argv[i]) == 0 || strcmp("-C", argv[i]) == 0) {
                 compat = true;
+            } else if (strcmp("--weight-map", argv[i]) == 0 || strcmp("-w", argv[i]) == 0) {
+                if (++i >= argc) {
+                    cerr << "Missing weight map file argument!" << endl;
+                    return -1;
+                }
+                weightMapFile = argv[i];
 #if defined(__APPLE__)
             } else if (strncmp("-psn", argv[i], 4) == 0) {
                 launched_from_finder = true;
@@ -162,6 +169,7 @@ int main(int argc, char **argv) {
         cout << "   -v, --vertices <count>    Desired vertex count of the output mesh" << endl;
         cout << "   -C, --compat              Compatibility mode to load snapshots from old software versions" << endl;
         cout << "   -k, --knn <count>         Point cloud mode: number of adjacent points to consider" << endl;
+        cout << "   -w, --weight-map <file>   Per-vertex density weight map (binary float32, one per vertex)" << endl;
         cout << "   -F, --fullscreen          Open a full-screen window" << endl;
         cout << "   -h, --help                Display this message" << endl;
         return -1;
@@ -177,7 +185,7 @@ int main(int argc, char **argv) {
             batch_process(args[0], batchOutput, rosy, posy, scale, face_count,
                           vertex_count, crease_angle, extrinsic,
                           align_to_boundaries, smooth_iter, knn_points,
-                          !dominant, deterministic);
+                          !dominant, deterministic, weightMapFile);
             return 0;
         } catch (const std::exception &e) {
             cerr << "Caught runtime error : " << e.what() << endl;

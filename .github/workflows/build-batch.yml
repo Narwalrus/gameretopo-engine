@@ -1,0 +1,133 @@
+name: Build Instant Meshes Batch Binary
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'ext/**'
+      - 'batch-build-src/**'
+      - '.github/workflows/build-batch.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Configure
+        run: |
+          mkdir -p build-batch
+          cd build-batch
+          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cd build-batch
+          make -j$(nproc)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant_meshes_linux
+          path: build-batch/instant_meshes_batch
+          if-no-files-found: error
+
+  build-macos:
+    name: macOS ARM64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          brew install cmake
+
+      - name: Configure
+        run: |
+          mkdir -p build-batch
+          cd build-batch
+          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cd build-batch
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant_meshes_macos
+          path: build-batch/instant_meshes_batch
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows x86_64 (MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        shell: cmd
+        run: |
+          mkdir build-batch
+          cd build-batch
+          cmake ../batch-build-src -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: cmd
+        run: |
+          cd build-batch
+          cmake --build . --config Release -j
+
+      - name: Locate binary
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path build-batch -Recurse -Filter "instant_meshes_batch.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant_meshes_win
+          path: build-batch/Release/instant_meshes_batch.exe
+          if-no-files-found: error
+
+  release:
+    name: Release Bundle
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize binaries
+        run: |
+          mkdir -p release
+          cp artifacts/instant_meshes_linux/instant_meshes_batch release/instant_meshes_linux
+          cp artifacts/instant_meshes_macos/instant_meshes_batch release/instant_meshes_macos
+          cp artifacts/instant_meshes_win/instant_meshes_batch.exe release/instant_meshes_win.exe
+          chmod +x release/instant_meshes_linux release/instant_meshes_macos
+          ls -la release/
+
+      - name: Upload combined bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameretopo-binaries-all-platforms
+          path: release/

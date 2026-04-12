@@ -77,6 +77,13 @@ public:
 
     inline Float scale() const { return mScale; }
     inline void setScale(Float scale) { mScale = scale; }
+    inline const VectorXf &vertexScale(int level = 0) const { return mVertexScale[level]; }
+    inline void setVertexScale(VectorXf &&vs) { mVertexScale.clear(); mVertexScale.push_back(std::move(vs)); }
+    inline bool hasVertexScale() const { return !mVertexScale.empty() && mVertexScale[0].size() > 0; }
+
+    inline const VectorXf &vertexStretch(int level = 0) const { return mVertexStretch[level]; }
+    inline void setVertexStretch(VectorXf &&vs) { mVertexStretch.clear(); mVertexStretch.push_back(std::move(vs)); }
+    inline bool hasVertexStretch() const { return !mVertexStretch.empty() && mVertexStretch[0].size() > 0; }
     inline int iterationsQ() const { return mIterationsQ; }
     inline void setIterationsQ(int iterationsQ) { mIterationsQ = iterationsQ; }
     inline int iterationsO() const { return mIterationsO; }
@@ -122,6 +129,8 @@ public:
     std::vector<MatrixXf> mCO;
     std::vector<VectorXf> mCQw;
     std::vector<VectorXf> mCOw;
+    std::vector<VectorXf> mVertexScale;
+    std::vector<VectorXf> mVertexStretch;
     bool mFrozenQ, mFrozenO;
     ordered_lock mMutex;
     Float mScale;

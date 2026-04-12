@@ -22,11 +22,44 @@
 #include "extract.h"
 #include "bvh.h"
 
+/* Helper: load a per-vertex float32 map from a binary file */
+static bool load_vertex_map(const std::string &path, uint32_t nVerts,
+                            float defaultValue, VectorXf &out) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) {
+        cerr << "Error: Could not open vertex map file \"" << path << "\"" << endl;
+        return false;
+    }
+    fseek(f, 0, SEEK_END);
+    long fileSize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint32_t nValues = fileSize / sizeof(float);
+    if (nValues == 0) {
+        cerr << "Error: Vertex map file is empty" << endl;
+        fclose(f);
+        return false;
+    }
+    std::vector<float> rawValues(nValues);
+    size_t read = fread(rawValues.data(), sizeof(float), nValues, f);
+    fclose(f);
+    if (read != nValues) {
+        cerr << "Error: Could not read vertex map data" << endl;
+        return false;
+    }
+    out.resize(nVerts);
+    for (uint32_t i = 0; i < nVerts; ++i) {
+        out[i] = (i < nValues) ? rawValues[i] : defaultValue;
+    }
+    return true;
+}
+
 void batch_process(const std::string &input, const std::string &output,
                    int rosy, int posy, Float scale, int face_count,
                    int vertex_count, Float creaseAngle, bool extrinsic,
                    bool align_to_boundaries, int smooth_iter, int knn_points,
-                   bool pure_quad, bool deterministic) {
+                   bool pure_quad, bool deterministic,
+                   const std::string &weightMapFile,
+                   const std::string &stretchMapFile) {
     cout << endl;
     cout << "Running in batch mode:" << endl;
     cout << "   Input file             = " << input << endl;
@@ -126,6 +159,9 @@ void batch_process(const std::string &input, const std::string &output,
         mRes.setE2E(std::move(E2E));
     }
 
+    /* Capture vertex count BEFORE moving V into mRes (V is moved-from after) */
+    uint32_t capturedVerts = V.cols();
+
     /* Build multi-resolution hierarrchy */
     mRes.setAdj(std::move(adj));
     mRes.setF(std::move(F));
@@ -133,6 +169,52 @@ void batch_process(const std::string &input, const std::string &output,
     mRes.setA(std::move(A));
     mRes.setN(std::move(N));
     mRes.setScale(scale);
+
+    /* Load per-vertex weight map if specified */
+    if (!weightMapFile.empty()) {
+        uint32_t nVerts = capturedVerts;
+        cout << "Loading weight map from \"" << weightMapFile << "\" for " << nVerts << " vertices .. ";
+        cout.flush();
+
+        VectorXf vertexScales;
+        if (load_vertex_map(weightMapFile, nVerts, 0.5f, vertexScales)) {
+            for (uint32_t i = 0; i < nVerts; ++i) {
+                float w = vertexScales[i];
+                if (w < 0.0f) w = 0.0f;
+                if (w > 1.0f) w = 1.0f;
+                vertexScales[i] = w;
+            }
+            mRes.setVertexScale(std::move(vertexScales));
+            cout << "done. (" << nVerts << " weights loaded)" << endl;
+        } else {
+            cout << "FAILED" << endl;
+            return;
+        }
+    }
+
+    /* Load per-vertex stretch map if specified */
+    if (!stretchMapFile.empty()) {
+        uint32_t nVerts = capturedVerts;
+        cout << "Loading stretch map from \"" << stretchMapFile << "\" for " << nVerts << " vertices .. ";
+        cout.flush();
+
+        VectorXf vertexStretches;
+        if (load_vertex_map(stretchMapFile, nVerts, 1.0f, vertexStretches)) {
+            /* Clamp stretch to reasonable range [0.25, 4.0] */
+            for (uint32_t i = 0; i < nVerts; ++i) {
+                float s = vertexStretches[i];
+                if (s < 0.25f) s = 0.25f;
+                if (s > 4.0f) s = 4.0f;
+                vertexStretches[i] = s;
+            }
+            mRes.setVertexStretch(std::move(vertexStretches));
+            cout << "done. (" << nVerts << " stretches loaded)" << endl;
+        } else {
+            cout << "FAILED" << endl;
+            return;
+        }
+    }
+
     mRes.build(deterministic);
     mRes.resetSolution();
 
