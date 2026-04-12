@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
+# Allow TBB 2017's old cmake_minimum_required on newer CMake versions
+if(POLICY CMP0048)
+  cmake_policy(SET CMP0048 OLD)
+endif()
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
 project(InstantMeshesBatch CXX C)
 
 set(CMAKE_CXX_STANDARD 14)
@@ -8,9 +14,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Aggressive -Wno flags to silence TBB 2017 warnings on modern GCC
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-changes-meaning -Wno-deprecated-declarations -Wno-int-in-bool-context -Wno-uninitialized -Wno-maybe-uninitialized -Wno-unused-parameter -Wno-sign-compare")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter -Wno-uninitialized -Wno-maybe-uninitialized")
+# Compiler-specific flags to silence TBB 2017 warnings
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations -Wno-int-in-bool-context -Wno-uninitialized -Wno-unused-parameter -Wno-sign-compare")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter -Wno-uninitialized")
+  # GCC-specific
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-changes-meaning -Wno-maybe-uninitialized")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-maybe-uninitialized")
+  endif()
+elseif(MSVC)
+  # MSVC: suppress the warnings that make TBB 2017 noisy
+  add_definitions(/D_CRT_SECURE_NO_WARNINGS /D__TBB_NO_IMPLICIT_LINKAGE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W0 /MP /wd4996")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W0")
+endif()
 
 # TBB build (static, no malloc proxy)
 set(TBB_BUILD_STATIC ON CACHE BOOL " " FORCE)
@@ -57,10 +75,8 @@ add_executable(InstantMeshesBatch
 
 target_link_libraries(InstantMeshesBatch tbb_static)
 
-if(WIN32)
-  # Static-link libgcc and libstdc++ to avoid DLL dependencies,
-  # but NOT -static (which breaks exception handling on MinGW-w64).
-  # Also statically link libwinpthread via linker groups.
+if(WIN32 AND NOT MSVC)
+  # MinGW cross-compile: static-link runtime to avoid DLL dependencies
   target_link_options(InstantMeshesBatch PRIVATE
     -static-libgcc
     -static-libstdc++
@@ -69,6 +85,7 @@ if(WIN32)
     -Wl,--no-whole-archive,-Bdynamic
   )
 endif()
+# MSVC produces a static exe by default; nothing extra needed.
 
 if(UNIX AND NOT WIN32)
   target_link_libraries(InstantMeshesBatch pthread)

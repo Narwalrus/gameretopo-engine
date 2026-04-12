@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p build-batch
           cd build-batch
-          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release
+          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         run: |
@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir -p build-batch
           cd build-batch
-          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release
+          cmake ../batch-build-src -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         run: |
@@ -86,7 +86,7 @@ jobs:
         run: |
           mkdir build-batch
           cd build-batch
-          cmake ../batch-build-src -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+          cmake ../batch-build-src -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         shell: cmd
