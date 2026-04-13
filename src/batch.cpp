@@ -59,7 +59,9 @@ void batch_process(const std::string &input, const std::string &output,
                    bool align_to_boundaries, int smooth_iter, int knn_points,
                    bool pure_quad, bool deterministic,
                    const std::string &weightMapFile,
-                   const std::string &stretchMapFile) {
+                   const std::string &stretchMapFile,
+                   const std::string &orientMapFile,
+                   bool no_subdivide) {
     cout << endl;
     cout << "Running in batch mode:" << endl;
     cout << "   Input file             = " << input << endl;
@@ -133,12 +135,14 @@ void batch_process(const std::string &input, const std::string &output,
         /* Subdivide the mesh if necessary */
         VectorXu V2E, E2E;
         VectorXb boundary, nonManifold;
-        if (stats.mMaximumEdgeLength*2 > scale || stats.mMaximumEdgeLength > stats.mAverageEdgeLength * 2) {
+        if (!no_subdivide && (stats.mMaximumEdgeLength*2 > scale || stats.mMaximumEdgeLength > stats.mAverageEdgeLength * 2)) {
             cout << "Input mesh is too coarse for the desired output edge length "
                     "(max input mesh edge length=" << stats.mMaximumEdgeLength
                  << "), subdividing .." << endl;
             build_dedge(F, V, V2E, E2E, boundary, nonManifold);
             subdivide(F, V, V2E, E2E, boundary, nonManifold, std::min(scale/2, (Float) stats.mAverageEdgeLength*2), deterministic);
+        } else if (no_subdivide) {
+            cout << "Skipping subdivision (--no-subdivide)" << endl;
         }
 
         /* Compute a directed edge data structure */
@@ -236,6 +240,70 @@ void batch_process(const std::string &input, const std::string &output,
                 }
             }
         }
+    }
+
+    /* Load per-vertex orientation hint map (principal curvature directions).
+       Fills non-boundary vertices with a soft constraint (weight 0.5) so
+       IM's orientation field solver picks the mathematically correct q
+       direction instead of an arbitrary one. Critical for cylinders and
+       other symmetric surfaces where the orientation field is ambiguous. */
+    if (!orientMapFile.empty() && !pointcloud) {
+        uint32_t nVerts = capturedVerts;
+        cout << "Loading orientation map from \"" << orientMapFile << "\" for "
+             << nVerts << " vertices .. ";
+        cout.flush();
+
+        /* If boundary constraints weren't set above, we need to clear here */
+        if (!align_to_boundaries) {
+            mRes.clearConstraints();
+        }
+
+        FILE *f = fopen(orientMapFile.c_str(), "rb");
+        if (!f) {
+            cerr << "Error: Could not open orientation map file" << endl;
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        long fileSize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+
+        /* 3 floats per vertex: dx, dy, dz */
+        uint32_t nDirs = fileSize / (3 * sizeof(float));
+        std::vector<float> rawDirs(nDirs * 3);
+        size_t read = fread(rawDirs.data(), sizeof(float), nDirs * 3, f);
+        fclose(f);
+        if (read != nDirs * 3) {
+            cerr << "Error: Could not read orientation map" << endl;
+            return;
+        }
+
+        /* Seed CQ for interior vertices (boundary vertices already set above) */
+        uint32_t seedCount = 0;
+        for (uint32_t i = 0; i < nVerts && i < nDirs; ++i) {
+            /* Skip if already constrained by boundary (weight > 0) */
+            if (mRes.CQw()[i] > 0.5f) continue;
+
+            Vector3f dir(rawDirs[i*3], rawDirs[i*3+1], rawDirs[i*3+2]);
+            Float len = dir.norm();
+            if (len < 1e-6f) continue;
+            dir /= len;
+
+            /* Project onto tangent plane (remove any component along normal) */
+            Vector3f n = mRes.N().col(i);
+            dir -= n * n.dot(dir);
+            len = dir.norm();
+            if (len < 1e-6f) continue;
+            dir /= len;
+
+            mRes.CQ().col(i) = dir;
+            mRes.CQw()[i] = 0.5f;  /* soft constraint */
+            seedCount++;
+        }
+        cout << "done. (seeded " << seedCount << " interior orientations)" << endl;
+    }
+
+    /* Propagate constraints if any were set */
+    if ((align_to_boundaries || !orientMapFile.empty()) && !pointcloud) {
         mRes.propagateConstraints(rosy, posy);
     }
 

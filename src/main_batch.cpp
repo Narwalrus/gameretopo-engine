@@ -21,13 +21,14 @@ int nprocs = -1;
 int main(int argc, char **argv) {
     std::vector<std::string> args;
     bool extrinsic = true, dominant = false, align_to_boundaries = false;
-    bool help = false, deterministic = false;
+    bool help = false, deterministic = false, no_subdivide = false;
     int rosy = 4, posy = 4, face_count = -1, vertex_count = -1;
     uint32_t knn_points = 10, smooth_iter = 2;
     Float crease_angle = -1, scale = -1;
     std::string batchOutput;
     std::string weightMapFile;
     std::string stretchMapFile;
+    std::string orientMapFile;
 
     try {
         for (int i = 1; i < argc; ++i) {
@@ -78,6 +79,11 @@ int main(int argc, char **argv) {
             } else if (strcmp("--stretch-map", argv[i]) == 0) {
                 if (++i >= argc) { std::cerr << "Missing stretch map file!" << std::endl; return -1; }
                 stretchMapFile = argv[i];
+            } else if (strcmp("--orient-map", argv[i]) == 0) {
+                if (++i >= argc) { std::cerr << "Missing orient map file!" << std::endl; return -1; }
+                orientMapFile = argv[i];
+            } else if (strcmp("--no-subdivide", argv[i]) == 0) {
+                no_subdivide = true;
             } else {
                 if (strncmp(argv[i], "-", 1) == 0) {
                     std::cerr << "Invalid argument: \"" << argv[i] << "\"!" << std::endl;
@@ -130,6 +136,8 @@ int main(int argc, char **argv) {
         std::cout << "   -k, --knn <count>         kNN points (point cloud mode)" << std::endl;
         std::cout << "   -w, --weight-map <file>   Per-vertex density weight map (binary float32)" << std::endl;
         std::cout << "       --stretch-map <file>  Per-vertex anisotropic stretch map (binary float32)" << std::endl;
+        std::cout << "       --orient-map <file>   Per-vertex orientation hint (binary 3xfloat32: dx,dy,dz)" << std::endl;
+        std::cout << "       --no-subdivide        Disable IM's automatic input subdivision" << std::endl;
         std::cout << "   -h, --help                Show this message" << std::endl;
         return help ? 0 : -1;
     }
@@ -140,7 +148,8 @@ int main(int argc, char **argv) {
         batch_process(args[0], batchOutput, rosy, posy, scale, face_count,
                       vertex_count, crease_angle, extrinsic,
                       align_to_boundaries, smooth_iter, knn_points,
-                      !dominant, deterministic, weightMapFile, stretchMapFile);
+                      !dominant, deterministic, weightMapFile, stretchMapFile,
+                      orientMapFile, no_subdivide);
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "Caught runtime error: " << e.what() << std::endl;

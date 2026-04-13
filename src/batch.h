@@ -21,4 +21,6 @@ extern void batch_process(const std::string &input, const std::string &output,
                           bool align_to_boundaries, int smooth_iter,
                           int knn_points, bool dominant, bool deterministic,
                           const std::string &weightMapFile = "",
-                          const std::string &stretchMapFile = "");
+                          const std::string &stretchMapFile = "",
+                          const std::string &orientMapFile = "",
+                          bool no_subdivide = false);
