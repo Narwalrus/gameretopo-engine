@@ -296,7 +296,7 @@ void batch_process(const std::string &input, const std::string &output,
             dir /= len;
 
             mRes.CQ().col(i) = dir;
-            mRes.CQw()[i] = 0.5f;  /* soft constraint */
+            mRes.CQw()[i] = 0.2f;  /* weak soft constraint — hint only */
             seedCount++;
         }
         cout << "done. (seeded " << seedCount << " interior orientations)" << endl;
