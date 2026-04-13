@@ -1040,14 +1040,16 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 std::pair<Vector3f, Vector3f> value;
                 if (has_stretch) {
                     /* Anisotropic path: compute q/t scales from per-vertex stretch.
-                       stretch > 1 -> elongate along q; stretch < 1 -> elongate along t.
-                       Area is approximately preserved: sqrt(stretch) * 1/sqrt(stretch) = 1. */
+                       Stretch > 1 elongates along t (perpendicular to high-curvature
+                       q direction). On a cylinder this means elongate along the length,
+                       which is the natural user expectation.
+                       Area is approximately preserved. */
                     Float s = 0.5f * ((*stretch_ptr)[i] + (*stretch_ptr)[j]);
                     if (s < 0.25f) s = 0.25f;
                     if (s > 4.0f) s = 4.0f;
                     Float sqrt_s = std::sqrt(s);
-                    Float scale_q = local_scale * sqrt_s;
-                    Float scale_t = local_scale / sqrt_s;
+                    Float scale_q = local_scale / sqrt_s;  /* tighter around circumference */
+                    Float scale_t = local_scale * sqrt_s;  /* longer along length */
                     value = compat_position_extrinsic_4_aniso(
                         v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, scale_q, scale_t);
                 } else {
@@ -1085,13 +1087,13 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 }
 
                 if (has_stretch) {
-                    /* Anisotropic round: must match what compat does */
+                    /* Anisotropic round: same convention as compat above */
                     Float s = (*stretch_ptr)[i];
                     if (s < 0.25f) s = 0.25f;
                     if (s > 4.0f) s = 4.0f;
                     Float sqrt_s = std::sqrt(s);
-                    Float scale_q = round_scale * sqrt_s;
-                    Float scale_t = round_scale / sqrt_s;
+                    Float scale_q = round_scale / sqrt_s;
+                    Float scale_t = round_scale * sqrt_s;
                     Float inv_scale_q = 1.0f / scale_q;
                     Float inv_scale_t = 1.0f / scale_t;
                     O.col(i) = position_round_4_aniso(sum, q_i, n_i, v_i,
