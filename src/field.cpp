@@ -985,6 +985,26 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
     }
     const bool has_stretch = (stretch_ptr != nullptr);
 
+    /* DIAGNOSTIC: log stretch state at each level entry so we can confirm
+       the anisotropic path is actually being taken and see sample values. */
+    if (level == 0) {
+        cout << "[STRETCH DIAG] level=" << level
+             << " has_stretch=" << has_stretch
+             << " N.cols=" << N.cols();
+        if (has_stretch) {
+            Float mn = 1e30f, mx = -1e30f, sum = 0;
+            for (int i = 0; i < stretch_ptr->size(); ++i) {
+                Float v = (*stretch_ptr)[i];
+                if (v < mn) mn = v;
+                if (v > mx) mx = v;
+                sum += v;
+            }
+            cout << " stretch[min=" << mn << " max=" << mx
+                 << " mean=" << (sum / stretch_ptr->size()) << "]";
+        }
+        cout << " scale=" << scale << endl;
+    }
+
     const std::vector<uint32_t> *phase = nullptr;
     const MatrixXf &CQ = mRes.CQ(level);
     const MatrixXf &CO = mRes.CO(level);
