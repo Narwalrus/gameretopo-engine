@@ -327,6 +327,18 @@ inline Vector3f position_round_4(const Vector3f &o, const Vector3f &q,
         t * std::round(t.dot(d) * inv_scale) * scale;
 }
 
+/* Anisotropic version: separate scales in q and t directions */
+inline Vector3f position_round_4_aniso(const Vector3f &o, const Vector3f &q,
+                                       const Vector3f &n, const Vector3f &p,
+                                       Float scale_q, Float inv_scale_q,
+                                       Float scale_t, Float inv_scale_t) {
+    Vector3f t = n.cross(q);
+    Vector3f d = p - o;
+    return o +
+        q * std::round(q.dot(d) * inv_scale_q) * scale_q +
+        t * std::round(t.dot(d) * inv_scale_t) * scale_t;
+}
+
 inline Vector2i position_round_index_4(const Vector3f &o, const Vector3f &q,
                                        const Vector3f &n, const Vector3f &p,
                                        Float /* unused */, Float inv_scale) {
@@ -1071,7 +1083,23 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     round_scale = scale * multiplier;
                     round_inv_scale = 1.0f / round_scale;
                 }
-                O.col(i) = round_functor(sum, q_i, n_i, v_i, round_scale, round_inv_scale);
+
+                if (has_stretch) {
+                    /* Anisotropic round: must match what compat does */
+                    Float s = (*stretch_ptr)[i];
+                    if (s < 0.25f) s = 0.25f;
+                    if (s > 4.0f) s = 4.0f;
+                    Float sqrt_s = std::sqrt(s);
+                    Float scale_q = round_scale * sqrt_s;
+                    Float scale_t = round_scale / sqrt_s;
+                    Float inv_scale_q = 1.0f / scale_q;
+                    Float inv_scale_t = 1.0f / scale_t;
+                    O.col(i) = position_round_4_aniso(sum, q_i, n_i, v_i,
+                                                     scale_q, inv_scale_q,
+                                                     scale_t, inv_scale_t);
+                } else {
+                    O.col(i) = round_functor(sum, q_i, n_i, v_i, round_scale, round_inv_scale);
+                }
             }
         }
     };
