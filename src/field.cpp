@@ -1037,19 +1037,25 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     local_inv_scale = 1.0f / local_scale;
                 }
 
+                /* Boundary vertices have external position constraints (CO/COw)
+                   that conflict with anisotropic grid placement. Fall back to
+                   isotropic when either endpoint of this edge is on a boundary
+                   (COw > 0). This gives a clean transition from interior
+                   anisotropic quads to isotropic quads at the boundary. */
+                const bool pair_is_boundary =
+                    (COw.size() > 0) && (COw[i] > 0 || COw[j] > 0);
+
                 std::pair<Vector3f, Vector3f> value;
-                if (has_stretch) {
+                if (has_stretch && !pair_is_boundary) {
                     /* Anisotropic path: compute q/t scales from per-vertex stretch.
                        Stretch > 1 elongates along t (perpendicular to high-curvature
-                       q direction). On a cylinder this means elongate along the length,
-                       which is the natural user expectation.
-                       Area is approximately preserved. */
+                       q direction). Area is approximately preserved. */
                     Float s = 0.5f * ((*stretch_ptr)[i] + (*stretch_ptr)[j]);
                     if (s < 0.25f) s = 0.25f;
                     if (s > 4.0f) s = 4.0f;
                     Float sqrt_s = std::sqrt(s);
-                    Float scale_q = local_scale / sqrt_s;  /* tighter around circumference */
-                    Float scale_t = local_scale * sqrt_s;  /* longer along length */
+                    Float scale_q = local_scale / sqrt_s;
+                    Float scale_t = local_scale * sqrt_s;
                     value = compat_position_extrinsic_4_aniso(
                         v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, scale_q, scale_t);
                 } else {
@@ -1086,7 +1092,10 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     round_inv_scale = 1.0f / round_scale;
                 }
 
-                if (has_stretch) {
+                /* Skip anisotropic round on boundary vertices (same reason as above) */
+                const bool this_is_boundary = (COw.size() > 0) && (COw[i] > 0);
+
+                if (has_stretch && !this_is_boundary) {
                     /* Anisotropic round: same convention as compat above */
                     Float s = (*stretch_ptr)[i];
                     if (s < 0.25f) s = 0.25f;
